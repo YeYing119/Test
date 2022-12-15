@@ -1,0 +1,331 @@
+---
+  title: "Name: Andy MacLachlan"
+author: 
+  - |
+  | Student number: TEST
+date: "`r format(Sys.time(), '%X, %d %B, %Y')`"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+\# Originality declaration
+
+I, [**insert your name**], confirm that the work presented in this assessment is my own. Where information has been derived from other sources, I confirm that this has been indicated in the work.
+
+date: `r format(Sys.time(), '%d %B, %Y')`
+
+# Start your response here
+
+## Initial project scope
+
+WRITE A PROJECT SCOPE (we will cover this in the next few weeks in more detail)
+
+-   What is my research question - is it different to the set question and why
+
+-   Is it appropriate to use 2020 as a year?
+
+    > This research will identify spatial patterns that can be used to inform future work on spatial factors on New York evicitions
+
+> My question is "are the evicitions in 2020 for New York spatially random or do they exhibit clustering"
+
+> A question for Spatial autocorrelation..."are the densitites of evicitions in New York similar over commnity districts for 2020"
+
+-   we could combine a few of these questions...
+
+> A question for spatial regression..."What are the factors that might lead to variation in evictions across New York in 2020?"
+
+The null hypothesis that I am going to test empirically is that there is no relationship \* with points \* densities of community districts \* with other factors that across New York
+
+-   Data
+
+-   What do i have
+
+-   What does it contain
+
+-   What are the NA values - do they matter
+
+-   Who collected the data - will they have any bias (e.g. remember gerrymandering / using data for a )
+
+-   Is there any accuracy information associated with the data - probably not
+
+-   What is the CRS - is that useful
+
+-   Do i need anything else or what might be useful
+
+-   How will i wrangle the data (based on the previous points) to apply the methods
+
+-   What are the limitations and assumptions (of either the data or the analysis)
+
+This is an essential part of your submission and worth 20%. In the past students have just written a line and failed this criterion (you don't have to pass each criterion).
+
+```{r}
+library(tidyverse)
+library(sf)
+library(tmap)
+library(janitor)
+library(spatstat)
+library(readr)
+library(spatstat)
+library(here)
+library(sp)
+library(rgeos)
+library(maptools)
+library(tmap)
+library(sf)
+library(geojson)
+library(geojsonio)
+library(tmaptools)
+```
+
+## Data loading
+
+Read in data - note the NA value. #1.去除无效数据，改动文件名
+
+```{r}
+evictions_points <- read_csv("Evictions.csv", na=" ")
+
+community_areas <- st_read("Community Districts/geo_export_c82ab859-0e0a-4066-b404-4e934949c2c6.shp")
+```
+
+Check class - added na argument in code above.
+
+EXPLAIN what i am doing here - checking the variable type to make sure there are no character columns that should be numeric due to NAs
+
+#2.summarise_all() (from dplyr) and pivot_longer() (from tidyr) to check that our data has been read in correctly and that
+
+```{r}
+Datatypelist <- evictions_points %>% 
+  summarise_all(class) %>%
+  pivot_longer(everything(),     # 2.5.4
+               names_to="All_variables", 
+               values_to="Variable_class")
+
+Datatypelist
+```
+
+#需要增加一步查看CRS坐标
+
+## Data wrangling
+
+#3.检查确定坐标（CRS），过滤无效坐标 Check the coordinates on this website for the csv - <https://www.latlong.net/>. Looks like the are in WGS84. Convert csv to sf object the map
+
+Missing values for coordiates thrown an error so i need to filter them out...
+
+```{r}
+points <- evictions_points%>%
+  filter(Longitude<0 & Latitude>0)%>%  #过滤，选出； 8.4.1.2
+  #创建一个新的points dataset
+  st_as_sf(., coords = c("Longitude", "Latitude"), 
+                   crs = 4326)
+tmap_mode("plot")
+qtm(points)
+
+```
+
+Make a map
+
+EXPLAIN why i might want to make a map here #4.了解有效数据（社区）的基本分布情况，描绘底图
+
+```{r}
+tmap_mode("plot")    # 输出带标题带比例尺的地图2.5.9
+tm_shape(community_areas) +
+  tm_polygons(col = NA, alpha = 0.5) +
+   tm_compass(position = c("right", "bottom"),type = "arrow") + 
+   tm_scale_bar(position = c("right", "bottom")) +
+   tm_layout(title = "Difference in life expectancy", legend.position = c("left", "bottom"))+
+tm_shape(points) +
+  tm_dots(col = "blue")
+```
+
+A lot of points!
+
+EXPLAIN...Check the are all within the boundaries...through a spatial subset...
+
+Error of st_crs(x) == st_crs(y) - means the CRSs of the data doesn't match. I think the error is just how they are set in the data, but i will transform the community areas 检查都在边界内...通过空间子集... st_crs(x) == st_crs(y) 错误 - 表示数据的 CRS 不匹配。我认为错误只是它们在数据中的设置方式，但我将改变社区区域 #如果遇到这个error运行下面的代码，不出现错误不用运行
+
+```{r}
+community_areas <- community_areas%>%
+  st_transform(., 4326)
+#如果运行错误，说明community_areas这个shp的CRS也要换成4326
+
+points_sub <- points[community_areas,]
+```
+
+#5.筛选2020年的被驱逐的住宅数据，即分析对象（散点）
+
+```{r}
+points_sub_2020<-points%>%
+  clean_names()%>%
+  #为什么要用clean_names？
+  filter(str_detect(executed_date, "2020"))%>%
+ # filter(eviction_legal_possession=="Eviction")%>% 选出驱逐
+  filter(residential_commercial=="Residential")
+```
+
+#6.出散点图，底图是community_areas
+
+```{r}
+tmap_mode("plot")    # 输出带标题带比例尺的地图2.5.9
+tm_shape(community_areas) +
+  tm_polygons(col = NA, alpha = 0.5) +
+   tm_compass(position = c("right", "bottom"),type = "arrow") + 
+   tm_scale_bar(position = c("right", "bottom")) +
+   tm_layout(title = "New York Eviction 2020", legend.position = c("left", "bottom"))+
+tm_shape(points_sub_2020) +
+  tm_dots(col = "blue")
+```
+
+## Data analysis
+
+Let's do some point pattern analysis...
+
+error that only projected coordinates can be used for ppp object! let's project - <https://epsg.io/2263>. Note that this is in feet.
+
+A better one might be <https://epsg.io/6538> as it uses meters #7.改坐标系，CRS=6538,因为这里存在测量尺度的差异，point pattern analysis需要用projected coordinates，从feet转化为meters
+
+```{r}
+# 6.5.6 整一节
+community_areas_projected <- community_areas %>%
+  st_transform(., 6538)
+
+points_sub_2020_projected <- points_sub_2020 %>%
+  st_transform(., 6538)
+
+
+window <- as.owin(community_areas_projected)
+plot(window)
+
+#8.建模，用Ripley K进行分析，含出图
+#create a sp object
+points_sub_2020_projected_sp<- points_sub_2020_projected %>%
+  as(., 'Spatial')
+#create a ppp object
+points_sub_2020_projected_sp.ppp <- ppp(x=points_sub_2020_projected_sp@coords[,1],
+                          y=points_sub_2020_projected_sp@coords[,2],
+                          window=window)
+```
+
+Ripley k
+
+EXPLAIN...why ami using ripley's K and what does it show
+
+```{r}
+#6.6.4 ，两根线的图也出现
+K <- points_sub_2020_projected_sp.ppp %>%
+  Kest(., correction="border") %>%
+  plot()
+```
+
+#9.DBSCAN分析，含使用DBSCAN的原因和出图 EXPLAIN...why i am using DBSCAN, what does it show and:
+
+Why did i select the values of eps and minpts #为什么选择eps和minpts的数值 \* How many evictions do we need for a cluster \* How far must they be
+
+Ripley's K suggests a higher eps, but doesn't consider the min points. I tried a few values and these seemed to give a reasonable result - it is a limitation and other methods (HDBSCAN) can overcome it. #Ripley's K 建议更高的 eps，但不考虑最小值。我尝试了一些值，这些值似乎给出了一个合理的结果------这是一个限制，其他方法 (HDBSCAN) 可以克服它。 \* I used the distplot in the code below - EXPLAIN what distplot does and shows.....
+
+```{r}
+# 6.7 第一步plot
+library(sp)
+
+#first extract the points from the spatial points data frame提取
+points_todf <- points_sub_2020_projected_sp %>%
+  coordinates(.)%>%
+  as.data.frame()
+
+#now run the dbscan analysis
+points_todf_DBSCAN <- points_todf %>%
+  fpc::dbscan(.,eps = 1000, MinPts = 50)
+
+points_todf%>%
+  dbscan::kNNdistplot(.,k=50)
+
+#now quickly plot the results出图DBSCAN Output
+plot(points_todf_DBSCAN, points_todf, main = "DBSCAN Output", frame = F)
+plot(community_areas_projected$geometry, add=T)
+```
+
+Add the cluster information to our original dataframe #将集群信息添加到原始数据框中
+
+```{r}
+#多了一列dbcluster，还有两列分别是"coords.x1", "coords.x2"
+points_todf<- points_todf %>%
+  mutate(dbcluster=points_todf_DBSCAN$cluster)
+
+```
+
+Convert our original data frame to a sf object again #10.再次将原始数据框转换为 sf 对象，并且放到更大的坐标系中（CRS,带经纬度）
+
+```{r}
+tosf <- points_todf%>%
+  st_as_sf(., coords = c("coords.x1", "coords.x2"), 
+                   crs = 6538)%>%
+  filter(dbcluster>0)   #把0去除
+
+```
+
+Map the data - remember we are adding layers one by one #图层是层层叠加
+
+```{r}
+ggplot(data = community_areas_projected) +
+  # add the geometry of the community areas
+  geom_sf() +
+  # add the geometry of the points - i have had to set the data here to add the layer
+  geom_sf(data = tosf, size = 0.4, colour=tosf$dbcluster, fill=tosf$dbcluster)
+
+```
+
+or tmap...very useful colour palette help...`tmaptools::palette_explorer()` from the `tmaptools` package #或者用tmap输出，上面输出带标题带比例尺的地图2.5.9
+
+```{r}
+library(tmap)
+library(sf)
+
+#tmaptools::palette_explorer()
+library(RColorBrewer)
+library(tmaptools)
+colours<- get_brewer_pal("Set1", n = 19)
+
+tmap_mode("plot")
+tm_shape(community_areas) +
+  tm_polygons(col = NA, alpha = 0.5) +
+tm_shape(tosf) +
+  tm_dots(col = "dbcluster",  palette = colours, style = "cat")
+```
+
+## Interpretation边出图边分析，不需要单独分析
+
+EXPLAIN (state) what you output shows.. you might do this in conjunction with the analysis so a seperate section isn't always needed....For example...Ripley's K shows X, which means X and so now i will progress with DBSCAN because.... 解释（说明）你输出的内容..你可以结合分析来做这件事，所以并不总是需要一个单独的部分......例如......Ripley的K显示X，这意味着X所以现在我会使用 DBSCAN 取得进展是因为......
+
+## Reflection
+
+This is not the end! Do not stop here...you must ...Critically reflect on the results you have produced.
+
+What is critical reflection - we will cover this in the next few sessions as well, but think about to the intro week lecture how to succeed in your degree. 这不是结束！不要停在这里......你必须......批判性地反思你所产生的结果。 什么是批判性反思------我们也将在接下来的几节课中介绍这一点，但请在介绍周讲座中思考如何获得学位
+
+DISCUSS
+
+-   Why might the results be important (e.g. the question say....New York City wish to conduct a study that aims to prevent people being evicted)
+-   What other work might this inform
+-   E.g. now i have clusters, could i extract the community districts and then look at some other data (e.g. census data) to explore factors that might influence evictions?
+-   Could i compare years? re-do this for 2019 - are the clusters in different parts if the city? Why might that be?
+-   How could i do spatial auto correlation on this? What would that show?
+-   Have you answered your research question, yes, no probably maybe!
+-   为什么结果可能很重要（例如问题说......纽约市希望进行一项旨在防止人们被驱逐的研究）
+-   这可能会告知其他哪些工作
+-   例如现在我有了集群，我可以提取社区区域然后查看一些其他数据（例如人口普查数据）来探索可能影响驱逐的因素吗？
+-   我可以比较年份吗？为 2019 年重新做这个 - 如果是城市，集群是在不同的地方吗？为什么会这样？
+-   我怎么能对此做空间自相关？那会显示什么？
+-   你有没有回答你的研究问题，是的，没有可能！
+
+Notes
+
+**do not just just stop and say there are clusters...** think about what it means or what other analysis you could do What would the client (New York City) be happy with from the analysis The exam is timed and you need to tactically score across all criteria - do not spend 4 hours trying to make something perfect. Get the basics down first then make parts better - we will cover this in future weeks too. **不要只是停下来说有集群......**想想这意味着什么，或者你可以做什么其他的分析 客户(纽约市)会从分析中得到什么满意 考试是有时间的，你需要在所有标准上战术得分-不要花4个小时试图让一些东西完美。先掌握基础知识，然后让零件更好-我们将在未来几周讨论这一点。
+
+FAQs
+
+Q: Can i just do clustering and pass.
+
+A: You can not only pass, but you can do very well. **HOWEVER** this depends on how well you score across the marking scheme...If you were to give me just the code used here (nothing else, no project scope, no explanations, no reflection) you may well fail.
+
+我可以做聚类并通过吗？ A：你不仅可以通过，而且可以做得很好。 **但是** 这取决于您在评分方案中的得分...如果您只给我这里使用的代码（没有别的，没有项目范围，没有解释，没有反思），您很可能会失败。
